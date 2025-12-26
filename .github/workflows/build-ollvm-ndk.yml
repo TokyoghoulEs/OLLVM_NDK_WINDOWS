@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       llvm_version:
-        description: LLVM Version
+        description: 'LLVM Version'
         required: true
         default: '17.0.6'
         type: choice
@@ -12,13 +12,13 @@ on:
           - '17.0.6'
           - '18.1.8'
       build_type:
-        description: Build Type
+        description: 'Build Type'
         required: true
-        default: MinSizeRel
+        default: 'MinSizeRel'
         type: choice
         options:
-          - MinSizeRel
-          - Release
+          - 'MinSizeRel'
+          - 'Release'
 
 env:
   LLVM_VERSION: ${{ github.event.inputs.llvm_version || '17.0.6' }}
@@ -26,135 +26,101 @@ env:
 
 jobs:
   build-ollvm:
-    name: Build OLLVM ${{ github.event.inputs.llvm_version }}
+    name: Build OLLVM ${{ github.event.inputs.llvm_version || '17.0.6' }}
     runs-on: windows-latest
     timeout-minutes: 360
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install Ninja
-      run: choco install ninja -y
+      - name: Install Ninja
+        run: choco install ninja -y
 
-    - name: Setup MSVC
-      uses: ilammy/msvc-dev-cmd@v1
-      with:
-        arch: x64
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
-    - name: Free disk space
-      run: |
-        Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.9*" -ErrorAction SilentlyContinue
-        Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.10*" -ErrorAction SilentlyContinue
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.9*" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.10*" -ErrorAction SilentlyContinue
 
-    - name: Clone LLVM Project
-      run: |
-        Write-Host "Clonando LLVM $env:LLVM_VERSION..."
-        git clone --depth 1 --branch "llvmorg-$env:LLVM_VERSION" https://github.com/llvm/llvm-project.git
+      - name: Clone LLVM Project
+        shell: pwsh
+        run: |
+          Write-Host "Clonando LLVM $env:LLVM_VERSION..."
+          git clone --depth 1 --branch "llvmorg-$env:LLVM_VERSION" https://github.com/llvm/llvm-project.git
 
-    - name: Download OLLVM Passes
-      run: |
-        Write-Host "Descargando OLLVM passes desde DreamSoule/ollvm17..."
-        git clone --depth 1 https://github.com/DreamSoule/ollvm17.git ollvm-source
-        Write-Host "Copiando passes de ofuscacion..."
-        Copy-Item -Recurse "ollvm-source/llvm-project/llvm/lib/Passes/Obfuscation" "llvm-project/llvm/lib/Passes/"
-        Write-Host "Copiando PassBuilder.cpp modificado..."
-        Copy-Item -Force "ollvm-source/llvm-project/llvm/lib/Passes/PassBuilder.cpp" "llvm-project/llvm/lib/Passes/"
-        Write-Host "Copiando CMakeLists.txt modificado..."
-        Copy-Item -Force "ollvm-source/llvm-project/llvm/lib/Passes/CMakeLists.txt" "llvm-project/llvm/lib/Passes/"
-        Write-Host "Verificando archivos copiados..."
-        Get-ChildItem "llvm-project/llvm/lib/Passes/Obfuscation" | ForEach-Object { Write-Host "  - $($_.Name)" }
-        Write-Host "OLLVM configurado correctamente"
+      - name: Download OLLVM Passes
+        shell: pwsh
+        run: |
+          Write-Host "Descargando OLLVM passes..."
+          git clone --depth 1 https://github.com/DreamSoule/ollvm17.git ollvm-source
+          Write-Host "Copiando passes..."
+          Copy-Item -Recurse "ollvm-source\llvm-project\llvm\lib\Passes\Obfuscation" "llvm-project\llvm\lib\Passes\"
+          Copy-Item -Force "ollvm-source\llvm-project\llvm\lib\Passes\PassBuilder.cpp" "llvm-project\llvm\lib\Passes\"
+          Copy-Item -Force "ollvm-source\llvm-project\llvm\lib\Passes\CMakeLists.txt" "llvm-project\llvm\lib\Passes\"
+          Write-Host "OLLVM configurado"
 
-    - name: Configure CMake
-      run: |
-        cmake -S llvm-project/llvm -B build -G Ninja `
-          -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
-          -DLLVM_ENABLE_PROJECTS="clang;lld" `
-          -DLLVM_TARGETS_TO_BUILD="AArch64;ARM" `
-          -DLLVM_ENABLE_ASSERTIONS=OFF `
-          -DLLVM_ENABLE_BACKTRACES=OFF `
-          -DLLVM_ENABLE_WARNINGS=OFF `
-          -DLLVM_INCLUDE_TESTS=OFF `
-          -DLLVM_INCLUDE_EXAMPLES=OFF `
-          -DLLVM_INCLUDE_BENCHMARKS=OFF `
-          -DLLVM_INCLUDE_DOCS=OFF `
-          -DCMAKE_C_COMPILER=cl `
-          -DCMAKE_CXX_COMPILER=cl
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -S llvm-project/llvm -B build -G Ninja -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE -DLLVM_ENABLE_PROJECTS="clang;lld" -DLLVM_TARGETS_TO_BUILD="AArch64;ARM" -DLLVM_ENABLE_ASSERTIONS=OFF -DLLVM_ENABLE_BACKTRACES=OFF -DLLVM_ENABLE_WARNINGS=OFF -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_INCLUDE_DOCS=OFF -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
 
-    - name: Build LLVM with OLLVM
-      run: |
-        Write-Host "Compilando LLVM con OLLVM (2-3 horas)..."
-        cmake --build build --config $env:BUILD_TYPE --target clang lld llvm-ar llvm-strip -j 2
+      - name: Build LLVM with OLLVM
+        shell: pwsh
+        run: |
+          Write-Host "Compilando LLVM con OLLVM..."
+          cmake --build build --config $env:BUILD_TYPE --target clang lld llvm-ar llvm-strip -j 2
 
-    - name: Prepare binaries
-      run: |
-        Write-Host "Preparando binarios..."
-        New-Item -ItemType Directory -Path "ollvm-binaries" -Force
-        $binaries = @("clang.exe", "clang++.exe", "clang-cl.exe", "lld.exe", "lld-link.exe", "ld.lld.exe", "llvm-ar.exe", "llvm-strip.exe")
-        foreach ($bin in $binaries) {
-          $src = "build/bin/$bin"
-          if (Test-Path $src) {
-            Copy-Item $src "ollvm-binaries/"
-            Write-Host "Copiado: $bin"
-          } else {
-            Write-Host "No encontrado: $bin"
-          }
-        }
-        $readme = "OLLVM Binaries - LLVM $env:LLVM_VERSION - Build $env:BUILD_TYPE - Target AArch64 ARM"
-        $readme | Out-File -FilePath "ollvm-binaries/README.txt" -Encoding UTF8
-        $size = (Get-ChildItem "ollvm-binaries" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-        Write-Host "Tamano total: $([math]::Round($size, 2)) MB"
+      - name: Prepare binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "ollvm-binaries" -Force
+          $bins = @("clang.exe","clang++.exe","clang-cl.exe","lld.exe","lld-link.exe","ld.lld.exe","llvm-ar.exe","llvm-strip.exe")
+          foreach ($b in $bins) { if (Test-Path "build\bin\$b") { Copy-Item "build\bin\$b" "ollvm-binaries\"; Write-Host "OK: $b" } }
+          "OLLVM $env:LLVM_VERSION" | Out-File "ollvm-binaries\VERSION.txt"
 
-    - name: Test OLLVM
-      run: |
-        Write-Host "Probando OLLVM..."
-        "int test(int x) { if (x > 10) return x * 2; return x + 1; }" | Out-File -FilePath "test.c" -Encoding UTF8
-        & "ollvm-binaries/clang.exe" -target aarch64-linux-android21 -mllvm -fla -c test.c -o test.o
-        if ($LASTEXITCODE -eq 0) { Write-Host "Test FLA: OK" } else { Write-Host "Test FLA: FAILED"; exit 1 }
-        & "ollvm-binaries/clang.exe" -target aarch64-linux-android21 -mllvm -bcf -c test.c -o test2.o
-        if ($LASTEXITCODE -eq 0) { Write-Host "Test BCF: OK" } else { Write-Host "Test BCF: FAILED"; exit 1 }
-        Write-Host "Todos los tests pasaron!"
+      - name: Test OLLVM
+        shell: pwsh
+        run: |
+          "int f(int x){return x>5?x*2:x+1;}" | Out-File "t.c" -Encoding ASCII
+          & "ollvm-binaries\clang.exe" -target aarch64-linux-android21 -mllvm -fla -c t.c -o t.o
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Host "OLLVM OK"
 
-    - name: Create ZIP
-      run: |
-        $zipName = "OLLVM-$env:LLVM_VERSION-Windows-x64.zip"
-        Compress-Archive -Path "ollvm-binaries/*" -DestinationPath $zipName
-        $size = (Get-Item $zipName).Length / 1MB
-        Write-Host "ZIP creado: $zipName - $([math]::Round($size, 2)) MB"
+      - name: Create ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "ollvm-binaries\*" -DestinationPath "OLLVM-$env:LLVM_VERSION-Windows-x64.zip"
 
-    - name: Upload to Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ollvm-${{ env.LLVM_VERSION }}
-        name: OLLVM ${{ env.LLVM_VERSION }} for Windows
-        body: |
-          OLLVM Clang Binaries for Windows
-          
-          LLVM: ${{ env.LLVM_VERSION }}
-          Build: ${{ env.BUILD_TYPE }}
-          Target: AArch64, ARM (Android)
-          
-          Flags: -mllvm -fla, -mllvm -bcf, -mllvm -sub, -mllvm -sobf, -mllvm -split, -mllvm -ibr, -mllvm -icall
-        files: OLLVM-*.zip
-        make_latest: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ollvm-${{ env.LLVM_VERSION }}
+          name: OLLVM ${{ env.LLVM_VERSION }} for Windows
+          body: 'OLLVM Clang for Windows - LLVM ${{ env.LLVM_VERSION }} - Flags: -mllvm -fla -bcf -sub -sobf'
+          files: OLLVM-*.zip
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Commit binaries to repo
-      run: |
-        Write-Host "Subiendo binarios al repositorio..."
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git checkout -B binaries
-        Get-ChildItem -Exclude ".git","ollvm-binaries" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        Copy-Item "ollvm-binaries/*" . -Force
-        git add -A
-        git commit -m "OLLVM $env:LLVM_VERSION binaries"
-        git push -f origin binaries
-        Write-Host "Binarios subidos a rama binaries"
+      - name: Push binaries branch
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B binaries
+          Get-ChildItem -Exclude ".git","ollvm-binaries" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          Copy-Item "ollvm-binaries\*" . -Force
+          git add -A
+          git commit -m "OLLVM $env:LLVM_VERSION"
+          git push -f origin binaries

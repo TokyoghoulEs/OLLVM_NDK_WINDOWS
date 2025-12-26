@@ -123,48 +123,20 @@ jobs:
         }
         
         # Crear README
-        @"
+        $readmeContent = @"
 # OLLVM Binaries
 
-**LLVM Version:** $env:LLVM_VERSION
-**Build Type:** $env:BUILD_TYPE
-**Target Architectures:** AArch64, ARM (Android)
+LLVM Version: $env:LLVM_VERSION
+Build Type: $env:BUILD_TYPE
+Target: AArch64, ARM (Android)
 
-## Flags de Ofuscacion Disponibles
+Flags: -mllvm -fla, -mllvm -bcf, -mllvm -sub, -mllvm -sobf, -mllvm -split
 
-| Flag | Descripcion |
-|------|-------------|
-| -mllvm -fla | Control Flow Flattening |
-| -mllvm -bcf | Bogus Control Flow |
-| -mllvm -bcf_prob=N | Probabilidad BCF (1-100) |
-| -mllvm -bcf_loop=N | Repeticiones BCF |
-| -mllvm -sub | Instruction Substitution |
-| -mllvm -sub_loop=N | Repeticiones SUB |
-| -mllvm -sobf | String Obfuscation |
-| -mllvm -split | Basic Block Split |
-| -mllvm -split_num=N | Numero de splits |
-| -mllvm -ibr | Indirect Branch |
-| -mllvm -icall | Indirect Call |
-| -mllvm -igv | Indirect Global Variable |
+Uso: clang -target aarch64-linux-android21 -mllvm -fla -mllvm -bcf -c archivo.c
 
-## Uso con Android NDK
-
-1. Copia estos binarios a tu NDK:
-   ``````
-   NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/
-   ``````
-
-2. Compila con flags de ofuscacion:
-   ``````
-   clang -target aarch64-linux-android21 -mllvm -fla -mllvm -bcf -c archivo.c
-   ``````
-
-## Creditos
-
-- LLVM Project: https://llvm.org
-- OLLVM: https://github.com/DreamSoule/ollvm17
-- Builder: TokyoghoulEs
-"@ | Out-File -FilePath "ollvm-binaries/README.md" -Encoding UTF8
+Creditos: DreamSoule/ollvm17, TokyoghoulEs
+"@
+        $readmeContent | Out-File -FilePath "ollvm-binaries/README.md" -Encoding UTF8
 
         $size = (Get-ChildItem "ollvm-binaries" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
         Write-Host "Tamano total: $([math]::Round($size, 2)) MB"

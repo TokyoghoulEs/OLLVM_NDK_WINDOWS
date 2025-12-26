@@ -1,49 +1,48 @@
 # ============================================================================
-# OLLVM NDK Builder for Windows
+# OLLVM Clang Builder for Windows
 # ============================================================================
-# Este workflow compila LLVM 17 con passes de OLLVM y lo integra en un NDK
-# para Windows. El resultado es un NDK completo con soporte de ofuscación.
-#
-# Tiempo estimado: 2-3 horas
-# RAM requerida: 16GB (proporcionada por GitHub Actions)
+# Compila SOLO los binarios de Clang con OLLVM (no el NDK completo)
+# Los binarios se suben al repositorio en la rama 'binaries'
+# 
+# Tamaño estimado: ~150-200MB (en lugar de 1.5GB del NDK completo)
+# Tiempo: 2-3 horas
 # ============================================================================
 
-name: Build OLLVM NDK for Windows
+name: Build OLLVM Clang for Windows
 
 on:
   workflow_dispatch:
     inputs:
       llvm_version:
-        description: 'LLVM Version (ej: 17.0.6, 18.1.8)'
+        description: 'LLVM Version'
         required: true
         default: '17.0.6'
-      ndk_version:
-        description: 'NDK Version para integrar (ej: r27c)'
-        required: true
-        default: 'r27c'
-      build_type:
-        description: 'Tipo de build'
-        required: true
-        default: 'Release'
         type: choice
         options:
-          - Release
+          - '17.0.6'
+          - '18.1.8'
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'MinSizeRel'
+        type: choice
+        options:
           - MinSizeRel
+          - Release
 
 env:
   LLVM_VERSION: ${{ github.event.inputs.llvm_version || '17.0.6' }}
-  NDK_VERSION: ${{ github.event.inputs.ndk_version || 'r27c' }}
-  BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
+  BUILD_TYPE: ${{ github.event.inputs.build_type || 'MinSizeRel' }}
 
 jobs:
   build-ollvm:
-    name: Build OLLVM ${{ github.event.inputs.llvm_version }} for Windows
+    name: Build OLLVM ${{ github.event.inputs.llvm_version }}
     runs-on: windows-latest
-    timeout-minutes: 360  # 6 horas máximo
+    timeout-minutes: 360
     
     steps:
     # ========================================================================
-    # PASO 1: Preparar entorno
+    # PREPARACIÓN
     # ========================================================================
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -54,89 +53,47 @@ jobs:
         python-version: '3.11'
         
     - name: Install Ninja
-      run: |
-        choco install ninja -y
-        ninja --version
+      run: choco install ninja -y
         
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
       with:
         arch: x64
 
+    - name: Free disk space
+      run: |
+        # Liberar espacio eliminando cosas innecesarias
+        Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.9*" -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force "C:\hostedtoolcache\windows\Python\3.10*" -ErrorAction SilentlyContinue
+
     # ========================================================================
-    # PASO 2: Descargar LLVM y OLLVM passes
+    # DESCARGAR LLVM Y OLLVM
     # ========================================================================
     - name: Clone LLVM Project
       run: |
         Write-Host "📥 Clonando LLVM $env:LLVM_VERSION..."
         git clone --depth 1 --branch "llvmorg-$env:LLVM_VERSION" https://github.com/llvm/llvm-project.git
-        Write-Host "✅ LLVM clonado"
         
     - name: Download OLLVM Passes
       run: |
-        Write-Host "📥 Descargando passes de OLLVM..."
+        Write-Host "📥 Descargando OLLVM passes..."
         git clone https://github.com/DreamSoule/ollvm17.git ollvm-passes
-        
-        # Copiar passes al directorio de LLVM
         Copy-Item -Recurse "ollvm-passes/Obfuscation" "llvm-project/llvm/lib/Obfuscation"
         
-        Write-Host "✅ Passes de OLLVM copiados"
-        Get-ChildItem "llvm-project/llvm/lib/Obfuscation"
-
-    # ========================================================================
-    # PASO 3: Parchear LLVM para incluir OLLVM
-    # ========================================================================
-    - name: Patch LLVM CMakeLists
-      run: |
-        Write-Host "🔧 Parcheando CMakeLists.txt..."
-        
-        # Agregar subdirectorio de Obfuscation
+        # Parchear CMakeLists.txt
         Add-Content -Path "llvm-project/llvm/lib/CMakeLists.txt" -Value "`nadd_subdirectory(Obfuscation)"
         
-        Write-Host "✅ CMakeLists.txt parcheado"
-        Get-Content "llvm-project/llvm/lib/CMakeLists.txt" | Select-Object -Last 5
-
-    - name: Patch PassBuilder for OLLVM
-      run: |
-        Write-Host "🔧 Parcheando PassBuilder.cpp..."
-        
-        $passBuilderPath = "llvm-project/llvm/lib/Passes/PassBuilder.cpp"
-        $content = Get-Content $passBuilderPath -Raw
-        
-        # Agregar includes de OLLVM después de los includes existentes
-        $includeBlock = @"
-
-// ============== OLLVM Obfuscation Passes ==============
-#include "Obfuscation/BogusControlFlow.h"
-#include "Obfuscation/Flattening.h"
-#include "Obfuscation/SplitBasicBlock.h"
-#include "Obfuscation/Substitution.h"
-#include "Obfuscation/StringEncryption.h"
-#include "Obfuscation/IndirectGlobalVariable.h"
-#include "Obfuscation/IndirectBranch.h"
-#include "Obfuscation/IndirectCall.h"
-#include "Obfuscation/Utils.h"
-// ======================================================
-
-"@
-        
-        # Insertar después de los includes de LLVM
-        $content = $content -replace '(#include "llvm/Transforms/Vectorize/VectorCombine.h")', "`$1`n$includeBlock"
-        
-        Set-Content -Path $passBuilderPath -Value $content
-        Write-Host "✅ PassBuilder.cpp parcheado"
+        Write-Host "✅ OLLVM configurado"
 
     # ========================================================================
-    # PASO 4: Configurar CMake
+    # COMPILAR
     # ========================================================================
     - name: Configure CMake
       run: |
-        Write-Host "⚙️ Configurando CMake..."
-        
         cmake -S llvm-project/llvm -B build -G Ninja `
           -DCMAKE_BUILD_TYPE=$env:BUILD_TYPE `
           -DLLVM_ENABLE_PROJECTS="clang;lld" `
-          -DLLVM_TARGETS_TO_BUILD="AArch64;ARM;X86" `
+          -DLLVM_TARGETS_TO_BUILD="AArch64;ARM" `
           -DLLVM_ENABLE_ASSERTIONS=OFF `
           -DLLVM_ENABLE_BACKTRACES=OFF `
           -DLLVM_ENABLE_WARNINGS=OFF `
@@ -147,245 +104,169 @@ jobs:
           -DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON `
           -DCMAKE_C_COMPILER=cl `
           -DCMAKE_CXX_COMPILER=cl
-          
-        Write-Host "✅ CMake configurado"
 
-    # ========================================================================
-    # PASO 5: Compilar LLVM con OLLVM
-    # ========================================================================
     - name: Build LLVM with OLLVM
       run: |
-        Write-Host "🔨 Compilando LLVM con OLLVM (esto toma 2-3 horas)..."
-        
-        # Compilar con paralelismo limitado para no quedarse sin memoria
-        cmake --build build --config $env:BUILD_TYPE --target clang clang++ lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip -j 4
-        
-        Write-Host "✅ Compilación completada"
+        Write-Host "🔨 Compilando (2-3 horas)..."
+        cmake --build build --config $env:BUILD_TYPE --target clang lld llvm-ar llvm-strip -j 2
 
     # ========================================================================
-    # PASO 6: Descargar NDK y preparar integración
+    # PREPARAR BINARIOS
     # ========================================================================
-    - name: Download Android NDK
+    - name: Prepare binaries
       run: |
-        Write-Host "📥 Descargando Android NDK $env:NDK_VERSION..."
+        Write-Host "📦 Preparando binarios..."
         
-        $ndkUrl = "https://dl.google.com/android/repository/android-ndk-$env:NDK_VERSION-windows.zip"
-        Invoke-WebRequest -Uri $ndkUrl -OutFile "ndk.zip"
+        New-Item -ItemType Directory -Path "ollvm-binaries" -Force
         
-        Write-Host "📦 Extrayendo NDK..."
-        Expand-Archive -Path "ndk.zip" -DestinationPath "." -Force
-        Remove-Item "ndk.zip"
+        # Copiar binarios esenciales
+        $binaries = @(
+          "clang.exe",
+          "clang++.exe",
+          "clang-cl.exe",
+          "lld.exe",
+          "lld-link.exe",
+          "ld.lld.exe",
+          "llvm-ar.exe",
+          "llvm-strip.exe"
+        )
         
-        Write-Host "✅ NDK descargado"
-
-    # ========================================================================
-    # PASO 7: Integrar OLLVM en NDK
-    # ========================================================================
-    - name: Integrate OLLVM into NDK
-      run: |
-        Write-Host "🔧 Integrando OLLVM en NDK..."
-        
-        $ndkDir = "android-ndk-$env:NDK_VERSION"
-        $toolchainDir = "$ndkDir/toolchains/llvm/prebuilt/windows-x86_64"
-        
-        # Backup de binarios originales
-        Write-Host "📦 Creando backup de binarios originales..."
-        New-Item -ItemType Directory -Path "$toolchainDir/bin-backup" -Force
-        Copy-Item "$toolchainDir/bin/clang.exe" "$toolchainDir/bin-backup/" -Force
-        Copy-Item "$toolchainDir/bin/clang++.exe" "$toolchainDir/bin-backup/" -Force
-        
-        # Copiar nuevos binarios con OLLVM
-        Write-Host "📋 Copiando binarios con OLLVM..."
-        Copy-Item "build/bin/clang.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/clang++.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/lld.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/ld.lld.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/llvm-ar.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/llvm-nm.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/llvm-objcopy.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/llvm-objdump.exe" "$toolchainDir/bin/" -Force
-        Copy-Item "build/bin/llvm-strip.exe" "$toolchainDir/bin/" -Force
-        
-        Write-Host "✅ OLLVM integrado en NDK"
-
-    # ========================================================================
-    # PASO 8: Verificar que OLLVM funciona
-    # ========================================================================
-    - name: Verify OLLVM Integration
-      run: |
-        Write-Host "🧪 Verificando integración de OLLVM..."
-        
-        $ndkDir = "android-ndk-$env:NDK_VERSION"
-        $clang = "$ndkDir/toolchains/llvm/prebuilt/windows-x86_64/bin/clang.exe"
-        
-        # Crear archivo de prueba
-        @"
-        int secret_function(int x) {
-            if (x > 10) {
-                return x * 2;
-            } else if (x > 5) {
-                return x + 100;
-            } else {
-                return x - 1;
-            }
+        foreach ($bin in $binaries) {
+          $src = "build/bin/$bin"
+          if (Test-Path $src) {
+            Copy-Item $src "ollvm-binaries/"
+            Write-Host "  ✅ $bin"
+          }
         }
-        int main() { return secret_function(7); }
-"@ | Out-File -FilePath "test.c" -Encoding UTF8
-        
-        # Compilar con flags de OLLVM
-        Write-Host "Compilando con -mllvm -fla (Control Flow Flattening)..."
-        & $clang -target aarch64-linux-android21 -mllvm -fla -c test.c -o test_fla.o
-        
-        Write-Host "Compilando con -mllvm -bcf (Bogus Control Flow)..."
-        & $clang -target aarch64-linux-android21 -mllvm -bcf -c test.c -o test_bcf.o
-        
-        Write-Host "Compilando con -mllvm -sub (Substitution)..."
-        & $clang -target aarch64-linux-android21 -mllvm -sub -c test.c -o test_sub.o
-        
-        # Verificar tamaños (código ofuscado es más grande)
-        $original = (Get-Item "test.c").Length
-        $fla = (Get-Item "test_fla.o").Length
-        $bcf = (Get-Item "test_bcf.o").Length
-        
-        Write-Host ""
-        Write-Host "📊 Resultados:"
-        Write-Host "  - test_fla.o: $fla bytes"
-        Write-Host "  - test_bcf.o: $bcf bytes"
-        Write-Host ""
-        Write-Host "✅ OLLVM funcionando correctamente!"
-
-    # ========================================================================
-    # PASO 9: Crear paquete final
-    # ========================================================================
-    - name: Create Release Package
-      run: |
-        Write-Host "📦 Creando paquete de release..."
-        
-        $ndkDir = "android-ndk-$env:NDK_VERSION"
-        $outputName = "OLLVM-NDK-$env:NDK_VERSION-LLVM$env:LLVM_VERSION-Windows"
         
         # Crear README
         @"
-# OLLVM NDK for Windows
+# OLLVM Binaries for Windows
 
-## Información
-- **NDK Version**: $env:NDK_VERSION
-- **LLVM Version**: $env:LLVM_VERSION con OLLVM
-- **Build Type**: $env:BUILD_TYPE
-- **Fecha**: $(Get-Date -Format "yyyy-MM-dd")
+## Info
+- LLVM Version: $env:LLVM_VERSION
+- Build Type: $env:BUILD_TYPE
+- Build Date: $(Get-Date -Format "yyyy-MM-dd")
 
-## Flags de OLLVM disponibles
+## Binarios incluidos
+- clang.exe / clang++.exe - Compiladores C/C++ con OLLVM
+- lld.exe / lld-link.exe - Linker
+- llvm-ar.exe - Archiver
+- llvm-strip.exe - Strip symbols
 
-| Flag | Descripción |
-|------|-------------|
-| `-mllvm -fla` | Control Flow Flattening |
-| `-mllvm -bcf` | Bogus Control Flow |
-| `-mllvm -bcf_prob=N` | Probabilidad BCF (1-100, default 70) |
-| `-mllvm -bcf_loop=N` | Repeticiones BCF (default 2) |
-| `-mllvm -sub` | Instruction Substitution |
-| `-mllvm -sub_loop=N` | Repeticiones SUB (default 1) |
-| `-mllvm -sobf` | String Obfuscation |
-| `-mllvm -split` | Basic Block Split |
-| `-mllvm -split_num=N` | Número de splits (default 3) |
-| `-mllvm -ibr` | Indirect Branch |
-| `-mllvm -icall` | Indirect Call |
-| `-mllvm -igv` | Indirect Global Variable |
+## Flags de OLLVM
+- -mllvm -fla : Control Flow Flattening
+- -mllvm -bcf : Bogus Control Flow  
+- -mllvm -sub : Instruction Substitution
+- -mllvm -sobf : String Obfuscation
+- -mllvm -split : Basic Block Split
+- -mllvm -ibr : Indirect Branch
+- -mllvm -icall : Indirect Call
 
-## Uso con CMake
+## Integrar en NDK
 
-```cmake
-set(CMAKE_C_FLAGS "`${CMAKE_C_FLAGS} -mllvm -fla -mllvm -bcf -mllvm -sub")
-set(CMAKE_CXX_FLAGS "`${CMAKE_CXX_FLAGS} -mllvm -fla -mllvm -bcf -mllvm -sub")
-```
+1. Descargar NDK oficial de Google
+2. Ir a: ndk/toolchains/llvm/prebuilt/windows-x86_64/bin/
+3. Hacer backup de clang.exe y clang++.exe originales
+4. Copiar estos binarios ahí
+5. Listo!
 
-## Uso con dex2c
+## Ejemplo de uso
 
-```json
-{
-    "ndk_dir": "C:/path/to/$outputName",
-    "ollvm": {
-        "enable": true,
-        "flags": "-mllvm -fla -mllvm -bcf -mllvm -sub"
-    }
-}
-```
+clang.exe -target aarch64-linux-android21 -mllvm -fla -mllvm -bcf -c test.c -o test.o
+"@ | Out-File -FilePath "ollvm-binaries/README.md" -Encoding UTF8
 
-## Binarios originales
+        # Mostrar tamaño
+        $size = (Get-ChildItem "ollvm-binaries" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+        Write-Host "📊 Tamaño total: $([math]::Round($size, 2)) MB"
 
-Los binarios originales del NDK están en:
-`toolchains/llvm/prebuilt/windows-x86_64/bin-backup/`
-
-## Créditos
-
-- LLVM Project: https://llvm.org/
-- OLLVM Passes: https://github.com/DreamSoule/ollvm17
-- Build by: GitHub Actions
-"@ | Out-File -FilePath "$ndkDir/OLLVM_README.md" -Encoding UTF8
+    # ========================================================================
+    # VERIFICAR QUE FUNCIONA
+    # ========================================================================
+    - name: Test OLLVM
+      run: |
+        Write-Host "🧪 Probando OLLVM..."
         
-        # Comprimir NDK
-        Write-Host "Comprimiendo NDK (esto puede tomar unos minutos)..."
-        Compress-Archive -Path $ndkDir -DestinationPath "$outputName.zip" -CompressionLevel Optimal
+        @"
+        int test(int x) {
+            if (x > 10) return x * 2;
+            else return x + 1;
+        }
+"@ | Out-File -FilePath "test.c" -Encoding UTF8
         
-        Write-Host "✅ Paquete creado: $outputName.zip"
-        Write-Host "📊 Tamaño: $((Get-Item "$outputName.zip").Length / 1GB) GB"
+        # Probar compilación con flags de OLLVM
+        & "ollvm-binaries/clang.exe" -target aarch64-linux-android21 -mllvm -fla -c test.c -o test.o
+        
+        if ($LASTEXITCODE -eq 0) {
+          Write-Host "✅ OLLVM funciona correctamente!"
+        } else {
+          Write-Host "❌ Error en OLLVM"
+          exit 1
+        }
 
     # ========================================================================
-    # PASO 10: Subir artifacts
+    # COMPRIMIR Y SUBIR
     # ========================================================================
-    - name: Upload OLLVM NDK
-      uses: actions/upload-artifact@v4
-      with:
-        name: OLLVM-NDK-${{ env.NDK_VERSION }}-LLVM${{ env.LLVM_VERSION }}-Windows
-        path: OLLVM-NDK-*.zip
-        retention-days: 30
+    - name: Create ZIP
+      run: |
+        $zipName = "OLLVM-$env:LLVM_VERSION-Windows-x64.zip"
+        Compress-Archive -Path "ollvm-binaries/*" -DestinationPath $zipName
         
-    - name: Upload OLLVM Binaries Only
-      uses: actions/upload-artifact@v4
-      with:
-        name: OLLVM-Binaries-LLVM${{ env.LLVM_VERSION }}-Windows
-        path: |
-          build/bin/clang.exe
-          build/bin/clang++.exe
-          build/bin/lld.exe
-          build/bin/ld.lld.exe
-          build/bin/llvm-ar.exe
-          build/bin/llvm-nm.exe
-          build/bin/llvm-objcopy.exe
-          build/bin/llvm-strip.exe
-        retention-days: 30
+        $size = (Get-Item $zipName).Length / 1MB
+        Write-Host "📦 $zipName - $([math]::Round($size, 2)) MB"
 
-    # ========================================================================
-    # PASO 11: Crear Release (opcional)
-    # ========================================================================
-    - name: Create GitHub Release
-      if: github.event_name == 'workflow_dispatch'
-      uses: softprops/action-gh-release@v1
+    - name: Upload to Release
+      uses: softprops/action-gh-release@v2
       with:
-        tag_name: v${{ env.LLVM_VERSION }}-ndk${{ env.NDK_VERSION }}
-        name: OLLVM NDK ${{ env.NDK_VERSION }} (LLVM ${{ env.LLVM_VERSION }})
+        tag_name: ollvm-${{ env.LLVM_VERSION }}
+        name: OLLVM ${{ env.LLVM_VERSION }} for Windows
         body: |
-          ## OLLVM NDK for Windows
+          ## OLLVM Clang Binaries for Windows
           
-          - **NDK Version**: ${{ env.NDK_VERSION }}
-          - **LLVM Version**: ${{ env.LLVM_VERSION }} con OLLVM
-          - **Build Type**: ${{ env.BUILD_TYPE }}
+          - **LLVM**: ${{ env.LLVM_VERSION }}
+          - **Build**: ${{ env.BUILD_TYPE }}
+          - **Target**: AArch64, ARM (Android)
           
           ### Flags disponibles
-          - `-mllvm -fla` - Control Flow Flattening
-          - `-mllvm -bcf` - Bogus Control Flow
-          - `-mllvm -sub` - Instruction Substitution
-          - `-mllvm -sobf` - String Obfuscation
-          - `-mllvm -split` - Basic Block Split
-          - `-mllvm -ibr` - Indirect Branch
-          - `-mllvm -icall` - Indirect Call
-          - `-mllvm -igv` - Indirect Global Variable
+          ```
+          -mllvm -fla    # Control Flow Flattening
+          -mllvm -bcf    # Bogus Control Flow
+          -mllvm -sub    # Instruction Substitution
+          -mllvm -sobf   # String Obfuscation
+          -mllvm -split  # Basic Block Split
+          -mllvm -ibr    # Indirect Branch
+          -mllvm -icall  # Indirect Call
+          ```
           
           ### Instalación
-          1. Descargar y extraer el ZIP
-          2. Configurar como NDK en Android Studio o dex2c
-          3. Agregar flags de OLLVM a tu CMakeLists.txt
-        files: OLLVM-NDK-*.zip
-        draft: false
-        prerelease: false
+          1. Descargar el ZIP
+          2. Extraer en `NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/`
+          3. Reemplazar clang.exe y clang++.exe
+        files: OLLVM-*.zip
+        make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # ========================================================================
+    # COMMIT AL REPO (rama binaries)
+    # ========================================================================
+    - name: Commit binaries to repo
+      run: |
+        Write-Host "📤 Subiendo binarios al repositorio..."
+        
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Crear rama binaries si no existe
+        git checkout -B binaries
+        
+        # Limpiar y copiar binarios
+        Remove-Item -Recurse -Force * -Exclude ".git" -ErrorAction SilentlyContinue
+        Copy-Item -Recurse "ollvm-binaries/*" .
+        
+        # Commit
+        git add -A
+        git commit -m "OLLVM $env:LLVM_VERSION binaries - $(Get-Date -Format 'yyyy-MM-dd')"
+        git push -f origin binaries
+        
+        Write-Host "✅ Binarios subidos a rama 'binaries'"

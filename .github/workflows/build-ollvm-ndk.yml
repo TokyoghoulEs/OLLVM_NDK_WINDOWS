@@ -37,15 +37,13 @@ jobs:
       - name: Clone LLVM
         run: git clone --depth 1 --branch "llvmorg-${{ env.LLVM_VERSION }}" https://github.com/llvm/llvm-project.git
 
-      - name: Clone OLLVM
-        run: git clone --depth 1 https://github.com/DreamSoule/ollvm17.git
-
       - name: Copy OLLVM passes
         shell: pwsh
         run: |
-          Copy-Item -Recurse "ollvm17\llvm-project\llvm\lib\Passes\Obfuscation" "llvm-project\llvm\lib\Passes\"
-          Copy-Item -Force "ollvm17\llvm-project\llvm\lib\Passes\PassBuilder.cpp" "llvm-project\llvm\lib\Passes\"
-          Copy-Item -Force "ollvm17\llvm-project\llvm\lib\Passes\CMakeLists.txt" "llvm-project\llvm\lib\Passes\"
+          # Usar passes locales del repositorio (ya incluyen fix para valueEscapes)
+          Copy-Item -Recurse "ollvm-passes\Obfuscation" "llvm-project\llvm\lib\Passes\"
+          Copy-Item -Force "ollvm-passes\PassBuilder.cpp" "llvm-project\llvm\lib\Passes\"
+          Copy-Item -Force "ollvm-passes\CMakeLists.txt" "llvm-project\llvm\lib\Passes\"
           Get-ChildItem "llvm-project\llvm\lib\Passes\Obfuscation"
 
       - name: Configure

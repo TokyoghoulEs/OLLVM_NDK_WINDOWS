@@ -15,6 +15,20 @@
 using namespace llvm;
 using std::vector;
 
+// Helper function from Reg2Mem.cpp - checks if instruction value escapes its basic block
+static bool valueEscapes(const Instruction &Inst) {
+  if (!Inst.getType()->isSized())
+    return false;
+
+  const BasicBlock *BB = Inst.getParent();
+  for (const User *U : Inst.users()) {
+    const Instruction *UI = cast<Instruction>(U);
+    if (UI->getParent() != BB || isa<PHINode>(UI))
+      return true;
+  }
+  return false;
+}
+
 LLVMContext *CONTEXT = nullptr;
 bool obf_function_name_cmd = false;
 

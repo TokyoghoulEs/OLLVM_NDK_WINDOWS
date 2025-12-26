@@ -61,20 +61,14 @@ jobs:
       run: |
         Write-Host "Descargando OLLVM passes desde DreamSoule/ollvm17..."
         git clone --depth 1 https://github.com/DreamSoule/ollvm17.git ollvm-source
-        
         Write-Host "Copiando passes de ofuscacion..."
-        # La estructura correcta en DreamSoule/ollvm17 es: llvm-project/llvm/lib/Passes/Obfuscation/
         Copy-Item -Recurse "ollvm-source/llvm-project/llvm/lib/Passes/Obfuscation" "llvm-project/llvm/lib/Passes/"
-        
         Write-Host "Copiando PassBuilder.cpp modificado..."
         Copy-Item -Force "ollvm-source/llvm-project/llvm/lib/Passes/PassBuilder.cpp" "llvm-project/llvm/lib/Passes/"
-        
         Write-Host "Copiando CMakeLists.txt modificado..."
         Copy-Item -Force "ollvm-source/llvm-project/llvm/lib/Passes/CMakeLists.txt" "llvm-project/llvm/lib/Passes/"
-        
         Write-Host "Verificando archivos copiados..."
         Get-ChildItem "llvm-project/llvm/lib/Passes/Obfuscation" | ForEach-Object { Write-Host "  - $($_.Name)" }
-        
         Write-Host "OLLVM configurado correctamente"
 
     - name: Configure CMake
@@ -102,16 +96,7 @@ jobs:
       run: |
         Write-Host "Preparando binarios..."
         New-Item -ItemType Directory -Path "ollvm-binaries" -Force
-        $binaries = @(
-          "clang.exe", 
-          "clang++.exe", 
-          "clang-cl.exe", 
-          "lld.exe", 
-          "lld-link.exe", 
-          "ld.lld.exe", 
-          "llvm-ar.exe", 
-          "llvm-strip.exe"
-        )
+        $binaries = @("clang.exe", "clang++.exe", "clang-cl.exe", "lld.exe", "lld-link.exe", "ld.lld.exe", "llvm-ar.exe", "llvm-strip.exe")
         foreach ($bin in $binaries) {
           $src = "build/bin/$bin"
           if (Test-Path $src) {
@@ -121,53 +106,19 @@ jobs:
             Write-Host "No encontrado: $bin"
           }
         }
-        
-        # Crear README
-        $readmeContent = @"
-# OLLVM Binaries
-
-LLVM Version: $env:LLVM_VERSION
-Build Type: $env:BUILD_TYPE
-Target: AArch64, ARM (Android)
-
-Flags: -mllvm -fla, -mllvm -bcf, -mllvm -sub, -mllvm -sobf, -mllvm -split
-
-Uso: clang -target aarch64-linux-android21 -mllvm -fla -mllvm -bcf -c archivo.c
-
-Creditos: DreamSoule/ollvm17, TokyoghoulEs
-"@
-        $readmeContent | Out-File -FilePath "ollvm-binaries/README.md" -Encoding UTF8
-
+        $readme = "OLLVM Binaries - LLVM $env:LLVM_VERSION - Build $env:BUILD_TYPE - Target AArch64 ARM"
+        $readme | Out-File -FilePath "ollvm-binaries/README.txt" -Encoding UTF8
         $size = (Get-ChildItem "ollvm-binaries" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
         Write-Host "Tamano total: $([math]::Round($size, 2)) MB"
 
     - name: Test OLLVM
       run: |
         Write-Host "Probando OLLVM..."
-        @"
-int test(int x) {
-    if (x > 10) return x * 2;
-    if (x < 5) return x - 1;
-    return x + 1;
-}
-"@ | Out-File -FilePath "test.c" -Encoding UTF8
-
+        "int test(int x) { if (x > 10) return x * 2; return x + 1; }" | Out-File -FilePath "test.c" -Encoding UTF8
         & "ollvm-binaries/clang.exe" -target aarch64-linux-android21 -mllvm -fla -c test.c -o test.o
-        if ($LASTEXITCODE -eq 0) {
-          Write-Host "Test 1 (FLA): OK"
-        } else {
-          Write-Host "Test 1 (FLA): FAILED"
-          exit 1
-        }
-        
+        if ($LASTEXITCODE -eq 0) { Write-Host "Test FLA: OK" } else { Write-Host "Test FLA: FAILED"; exit 1 }
         & "ollvm-binaries/clang.exe" -target aarch64-linux-android21 -mllvm -bcf -c test.c -o test2.o
-        if ($LASTEXITCODE -eq 0) {
-          Write-Host "Test 2 (BCF): OK"
-        } else {
-          Write-Host "Test 2 (BCF): FAILED"
-          exit 1
-        }
-        
+        if ($LASTEXITCODE -eq 0) { Write-Host "Test BCF: OK" } else { Write-Host "Test BCF: FAILED"; exit 1 }
         Write-Host "Todos los tests pasaron!"
 
     - name: Create ZIP
@@ -183,34 +134,13 @@ int test(int x) {
         tag_name: ollvm-${{ env.LLVM_VERSION }}
         name: OLLVM ${{ env.LLVM_VERSION }} for Windows
         body: |
-          ## OLLVM Clang Binaries for Windows
+          OLLVM Clang Binaries for Windows
           
-          **LLVM Version:** ${{ env.LLVM_VERSION }}
-          **Build Type:** ${{ env.BUILD_TYPE }}
-          **Target Architectures:** AArch64, ARM (Android)
+          LLVM: ${{ env.LLVM_VERSION }}
+          Build: ${{ env.BUILD_TYPE }}
+          Target: AArch64, ARM (Android)
           
-          ### Flags de Ofuscacion
-          
-          | Flag | Descripcion |
-          |------|-------------|
-          | `-mllvm -fla` | Control Flow Flattening |
-          | `-mllvm -bcf` | Bogus Control Flow |
-          | `-mllvm -sub` | Instruction Substitution |
-          | `-mllvm -sobf` | String Obfuscation |
-          | `-mllvm -split` | Basic Block Split |
-          | `-mllvm -ibr` | Indirect Branch |
-          | `-mllvm -icall` | Indirect Call |
-          
-          ### Instalacion
-          
-          1. Descarga el ZIP
-          2. Extrae los binarios
-          3. Copia a `NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/`
-          4. Usa con: `clang -mllvm -fla -mllvm -bcf ...`
-          
-          ### Creditos
-          - OLLVM: DreamSoule/ollvm17
-          - Builder: TokyoghoulEs
+          Flags: -mllvm -fla, -mllvm -bcf, -mllvm -sub, -mllvm -sobf, -mllvm -split, -mllvm -ibr, -mllvm -icall
         files: OLLVM-*.zip
         make_latest: true
       env:
@@ -225,6 +155,6 @@ int test(int x) {
         Get-ChildItem -Exclude ".git","ollvm-binaries" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
         Copy-Item "ollvm-binaries/*" . -Force
         git add -A
-        git commit -m "OLLVM $env:LLVM_VERSION binaries - $(Get-Date -Format 'yyyy-MM-dd')"
+        git commit -m "OLLVM $env:LLVM_VERSION binaries"
         git push -f origin binaries
-        Write-Host "Binarios subidos a rama 'binaries'"
+        Write-Host "Binarios subidos a rama binaries"

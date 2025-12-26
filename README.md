@@ -1,70 +1,180 @@
 # 🔒 OLLVM NDK Builder para Windows
 
-Este repositorio contiene un workflow de GitHub Actions que compila automáticamente LLVM con passes de OLLVM (Obfuscator-LLVM) y lo integra en un Android NDK para Windows.
+Compilador Clang con **OLLVM (Obfuscator-LLVM)** para ofuscar código nativo en Android.
 
-## 🚀 Cómo usar
+[![Build OLLVM](https://github.com/TokyoghoulEs/OLLVM_NDK_WINDOWS/actions/workflows/build-ollvm-ndk.yml/badge.svg)](https://github.com/TokyoghoulEs/OLLVM_NDK_WINDOWS/actions/workflows/build-ollvm-ndk.yml)
 
-### 1. Crear tu repositorio
+---
 
-1. Crea un nuevo repositorio en GitHub (puede ser privado)
-2. Copia la carpeta `.github/` a tu repositorio
-3. Haz push
+## 📥 Descargar
 
-### 2. Ejecutar el workflow
+### Opción 1: Releases (Recomendado)
+👉 [**Descargar última versión**](https://github.com/TokyoghoulEs/OLLVM_NDK_WINDOWS/releases/latest)
 
-1. Ve a la pestaña **Actions** de tu repositorio
-2. Selecciona **"Build OLLVM NDK for Windows"**
-3. Click en **"Run workflow"**
-4. Configura las opciones:
-   - **LLVM Version**: `17.0.6` (recomendado) o `18.1.8`
-   - **NDK Version**: `r27c` (recomendado)
-   - **Build Type**: `Release` o `MinSizeRel`
-5. Click en **"Run workflow"**
+### Opción 2: Rama binaries
+👉 [**Ver binarios**](https://github.com/TokyoghoulEs/OLLVM_NDK_WINDOWS/tree/binaries)
 
-### 3. Esperar y descargar
+---
 
-- ⏱️ El build toma **2-3 horas**
-- 📦 Al terminar, descarga el artifact desde la pestaña Actions
-- 📁 Obtendrás un NDK completo con OLLVM integrado
+## 🚀 Instalación Rápida
 
-## 📋 Requisitos
+### Paso 1: Descargar NDK oficial de Google
 
-- Cuenta de GitHub (gratis)
-- Repositorio público o privado
-- No necesitas nada instalado localmente
+```powershell
+# Descargar NDK r27c desde:
+# https://developer.android.com/ndk/downloads
 
-## 🔧 Flags de OLLVM disponibles
-
-| Flag | Descripción |
-|------|-------------|
-| `-mllvm -fla` | Control Flow Flattening - Aplana el flujo de control |
-| `-mllvm -bcf` | Bogus Control Flow - Añade código falso |
-| `-mllvm -bcf_prob=N` | Probabilidad de BCF (1-100, default 70) |
-| `-mllvm -bcf_loop=N` | Repeticiones de BCF (default 2) |
-| `-mllvm -sub` | Instruction Substitution - Reemplaza instrucciones |
-| `-mllvm -sub_loop=N` | Repeticiones de SUB (default 1) |
-| `-mllvm -sobf` | String Obfuscation - Ofusca strings |
-| `-mllvm -split` | Basic Block Split - Divide bloques |
-| `-mllvm -split_num=N` | Número de splits (default 3) |
-| `-mllvm -ibr` | Indirect Branch - Saltos indirectos |
-| `-mllvm -icall` | Indirect Call - Llamadas indirectas |
-| `-mllvm -igv` | Indirect Global Variable - Variables globales indirectas |
-
-## 📝 Uso después de descargar
-
-### Con CMake (Android Studio)
-
-```cmake
-# En tu CMakeLists.txt
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mllvm -fla -mllvm -bcf -mllvm -sub")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -fla -mllvm -bcf -mllvm -sub")
+# O con Android Studio:
+# SDK Manager → SDK Tools → NDK (Side by side)
 ```
 
-### Con dex2c
+### Paso 2: Descargar binarios de OLLVM
+
+Descarga `OLLVM-17.0.6-Windows-x64.zip` desde [Releases](https://github.com/TokyoghoulEs/OLLVM_NDK_WINDOWS/releases)
+
+### Paso 3: Integrar en NDK
+
+```powershell
+# Ruta del NDK (ajustar según tu instalación)
+$NDK = "C:\Android\Sdk\ndk\27.0.12077973"
+$TOOLCHAIN = "$NDK\toolchains\llvm\prebuilt\windows-x86_64\bin"
+
+# Hacer backup de originales
+Copy-Item "$TOOLCHAIN\clang.exe" "$TOOLCHAIN\clang.exe.backup"
+Copy-Item "$TOOLCHAIN\clang++.exe" "$TOOLCHAIN\clang++.exe.backup"
+
+# Extraer y copiar binarios de OLLVM
+Expand-Archive -Path "OLLVM-17.0.6-Windows-x64.zip" -DestinationPath "ollvm-temp"
+Copy-Item "ollvm-temp\clang.exe" "$TOOLCHAIN\" -Force
+Copy-Item "ollvm-temp\clang++.exe" "$TOOLCHAIN\" -Force
+
+# Limpiar
+Remove-Item -Recurse "ollvm-temp"
+
+Write-Host "✅ OLLVM instalado en NDK"
+```
+
+### Paso 4: Verificar instalación
+
+```powershell
+# Crear archivo de prueba
+@"
+int secret(int x) {
+    if (x > 10) return x * 2;
+    return x + 1;
+}
+"@ | Out-File -FilePath "test.c" -Encoding UTF8
+
+# Compilar con OLLVM
+$CLANG = "C:\Android\Sdk\ndk\27.0.12077973\toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe"
+& $CLANG -target aarch64-linux-android21 -mllvm -fla -mllvm -bcf -c test.c -o test.o
+
+# Si no hay errores, OLLVM funciona!
+```
+
+---
+
+## 🔧 Flags de Ofuscación
+
+| Flag | Descripción | Impacto |
+|------|-------------|---------|
+| `-mllvm -fla` | **Control Flow Flattening** - Aplana el flujo de control | ⭐⭐⭐ Alto |
+| `-mllvm -bcf` | **Bogus Control Flow** - Añade código falso | ⭐⭐⭐ Alto |
+| `-mllvm -bcf_prob=N` | Probabilidad de BCF (1-100, default 70) | - |
+| `-mllvm -bcf_loop=N` | Repeticiones de BCF (default 2) | - |
+| `-mllvm -sub` | **Instruction Substitution** - Reemplaza instrucciones | ⭐⭐ Medio |
+| `-mllvm -sub_loop=N` | Repeticiones de SUB (default 1) | - |
+| `-mllvm -sobf` | **String Obfuscation** - Ofusca strings | ⭐⭐ Medio |
+| `-mllvm -split` | **Basic Block Split** - Divide bloques | ⭐ Bajo |
+| `-mllvm -split_num=N` | Número de splits (default 3) | - |
+| `-mllvm -ibr` | **Indirect Branch** - Saltos indirectos | ⭐⭐ Medio |
+| `-mllvm -icall` | **Indirect Call** - Llamadas indirectas | ⭐⭐ Medio |
+| `-mllvm -igv` | **Indirect Global Variable** | ⭐ Bajo |
+
+### Combinaciones recomendadas
+
+```bash
+# Protección MÁXIMA (más lento de compilar)
+-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf -mllvm -split -mllvm -ibr -mllvm -icall
+
+# Protección ALTA (buen balance)
+-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf
+
+# Protección MEDIA (rápido)
+-mllvm -fla -mllvm -sub
+
+# Solo strings
+-mllvm -sobf
+```
+
+---
+
+## 📝 Uso con CMake (Android Studio)
+
+### CMakeLists.txt
+
+```cmake
+cmake_minimum_required(VERSION 3.18)
+project(MySecureApp)
+
+# Flags de OLLVM para código crítico
+set(OLLVM_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub")
+
+# Aplicar a todo el proyecto
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OLLVM_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OLLVM_FLAGS}")
+
+add_library(native-lib SHARED native-lib.cpp)
+```
+
+### Solo para archivos específicos
+
+```cmake
+# Ofuscar solo archivos críticos
+set_source_files_properties(
+    security.cpp
+    crypto.cpp
+    license.cpp
+    PROPERTIES COMPILE_FLAGS "-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf"
+)
+```
+
+---
+
+## 📝 Uso con ndk-build
+
+### Android.mk
+
+```makefile
+LOCAL_PATH := $(call my-dir)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := native-lib
+LOCAL_SRC_FILES := native-lib.cpp
+
+# Flags de OLLVM
+LOCAL_CFLAGS += -mllvm -fla -mllvm -bcf -mllvm -sub
+LOCAL_CPPFLAGS += -mllvm -fla -mllvm -bcf -mllvm -sub
+
+include $(BUILD_SHARED_LIBRARY)
+```
+
+---
+
+## 📝 Uso con dex2c
+
+### dcc.cfg
 
 ```json
 {
-    "ndk_dir": "C:/path/to/OLLVM-NDK-r27c",
+    "apktool": "tools/apktool.jar",
+    "ndk_dir": "C:/Android/Sdk/ndk/27.0.12077973",
+    "signature": {
+        "keystore_path": "keystore/release.keystore",
+        "alias": "mykey",
+        "keystore_pass": "password",
+        "store_pass": "password"
+    },
     "ollvm": {
         "enable": true,
         "flags": "-mllvm -fla -mllvm -bcf -mllvm -sub -mllvm -sobf"
@@ -72,62 +182,129 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mllvm -fla -mllvm -bcf -mllvm -sub")
 }
 ```
 
-### Con ndk-build
+---
 
-```makefile
-# En tu Android.mk
-LOCAL_CFLAGS += -mllvm -fla -mllvm -bcf -mllvm -sub
-LOCAL_CPPFLAGS += -mllvm -fla -mllvm -bcf -mllvm -sub
-```
+## 🔨 Compilar tú mismo
+
+Si quieres compilar OLLVM tú mismo:
+
+1. **Fork** este repositorio
+2. Ve a **Actions** → **Build OLLVM Clang for Windows**
+3. Click **Run workflow**
+4. Selecciona versión de LLVM (17.0.6 recomendado)
+5. Espera 2-3 horas
+6. Descarga desde **Releases** o rama **binaries**
+
+---
 
 ## ⚠️ Notas importantes
 
-1. **Tiempo de compilación**: El código ofuscado tarda más en compilar
-2. **Tamaño del binario**: El código ofuscado es más grande
-3. **Rendimiento**: Puede haber una pequeña penalización de rendimiento
-4. **Debugging**: El código ofuscado es muy difícil de debuggear
+### Rendimiento
+- El código ofuscado es **más lento** de compilar
+- El binario resultante es **más grande**
+- Puede haber **pequeña penalización** de rendimiento en runtime
 
-## 🔄 Versiones soportadas
+### Debugging
+- El código ofuscado es **muy difícil** de debuggear
+- Usa ofuscación solo en **builds de release**
+- Mantén builds de debug sin ofuscación
 
-| LLVM | Estado | Notas |
-|------|--------|-------|
-| 17.0.6 | ✅ Recomendado | Estable, bien probado |
-| 18.1.8 | ⚠️ Experimental | Puede requerir ajustes |
+### Compatibilidad
+- ✅ Android NDK r25+
+- ✅ AArch64 (arm64-v8a)
+- ✅ ARM (armeabi-v7a)
+- ❌ x86/x86_64 (no incluido para reducir tamaño)
 
-| NDK | Estado | Notas |
-|-----|--------|-------|
-| r27c | ✅ Recomendado | Última LTS |
-| r26d | ✅ Soportado | Estable |
-| r25c | ✅ Soportado | Antiguo pero funcional |
+---
 
-## 📊 Recursos de GitHub Actions
+## 📊 Comparación: Código normal vs OLLVM
 
-- **RAM**: 16 GB (suficiente para compilar LLVM)
-- **CPU**: 4 cores
-- **Disco**: 14 GB disponibles
-- **Tiempo máximo**: 6 horas por job
-- **Costo**: Gratis para repos públicos, 2000 min/mes para privados
+### Código original
+```c
+int check_license(int key) {
+    if (key == 12345) {
+        return 1;  // Valid
+    }
+    return 0;  // Invalid
+}
+```
 
-## 🐛 Solución de problemas
+### Después de OLLVM (-fla -bcf)
+El código se transforma en un switch gigante con estados, bloques falsos y predicados opacos. Ejemplo simplificado:
 
-### El build falla por timeout
-- Reduce los targets: cambia `AArch64;ARM;X86` a solo `AArch64;ARM`
-- Usa `MinSizeRel` en lugar de `Release`
+```c
+int check_license(int key) {
+    int state = 0;
+    int result;
+    while (1) {
+        switch (state) {
+            case 0:
+                if ((x * x) % 2 == 0) {  // Predicado opaco (siempre true)
+                    state = 1;
+                } else {
+                    state = 5;  // Código falso
+                }
+                break;
+            case 1:
+                if (key == 12345) {
+                    state = 2;
+                } else {
+                    state = 3;
+                }
+                break;
+            case 2:
+                result = 1;
+                state = 4;
+                break;
+            case 3:
+                result = 0;
+                state = 4;
+                break;
+            case 4:
+                return result;
+            case 5:
+                // Código falso que nunca se ejecuta
+                result = key ^ 0xDEAD;
+                state = 3;
+                break;
+        }
+    }
+}
+```
 
-### El build falla por memoria
-- Reduce el paralelismo: cambia `-j 4` a `-j 2`
+---
 
-### Los flags de OLLVM no funcionan
-- Verifica que usaste el clang del NDK modificado
-- Asegúrate de usar `-mllvm` antes de cada flag
+## 🙏 Créditos
+
+- [LLVM Project](https://llvm.org/) - Compilador base
+- [DreamSoule/ollvm17](https://github.com/DreamSoule/ollvm17) - Passes de OLLVM para LLVM 17
+- [obfuscator-llvm](https://github.com/obfuscator-llvm/obfuscator) - Proyecto OLLVM original
+
+---
 
 ## 📜 Licencia
 
 - LLVM: Apache License 2.0
 - OLLVM Passes: MIT License
+- Este repositorio: MIT License
 
-## 🙏 Créditos
+---
 
-- [LLVM Project](https://llvm.org/)
-- [DreamSoule/ollvm17](https://github.com/DreamSoule/ollvm17)
-- [obfuscator-llvm](https://github.com/obfuscator-llvm/obfuscator)
+## 🐛 Problemas conocidos
+
+### Error: "unknown argument: '-mllvm'"
+**Causa**: Estás usando el clang original, no el de OLLVM
+**Solución**: Verifica que copiaste los binarios correctamente
+
+### Error: Compilación muy lenta
+**Causa**: Los passes de ofuscación son costosos
+**Solución**: Reduce flags o aplica solo a archivos críticos
+
+### Error: APK muy grande
+**Causa**: Código ofuscado es más grande
+**Solución**: Usa `-Os` para optimizar tamaño, o reduce flags de ofuscación
+
+---
+
+**Creado por**: TokyoghoulEs  
+**Última actualización**: Diciembre 2025
